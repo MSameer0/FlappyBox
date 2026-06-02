@@ -16,8 +16,8 @@ object TeaVMBuilder {
 
         val webBackend = WebBackend()
             .setHtmlTitle("FlappyBox")
-            .setHtmlWidth(800) /* Change this to fit your game's requirements. */
-            .setHtmlHeight(600) /* Change this to fit your game's requirements. */
+            .setHtmlWidth(360)
+            .setHtmlHeight(640)
             .setStartJettyAfterBuild(startJetty)
             .setJettyPort(8080)
 //            .setWebAssembly(true) /* Uncomment this line to use WASM output instead of JavaScript output. */
