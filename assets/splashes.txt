@@ -1,0 +1,4 @@
+#this file contains splash texts for the main menu.
+flappy box
+box that is flappy
+<insert random splash text>
