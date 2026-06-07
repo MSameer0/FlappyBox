@@ -8,7 +8,6 @@ import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
 import com.badlogic.gdx.graphics.g2d.SpriteBatch
-import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.scenes.scene2d.Actor
@@ -32,9 +31,9 @@ class MainMenuScreen : KtxScreen {
     private val screenProjection = Matrix4()
     private val whitePixel = createPixelTexture(Color.WHITE)
     private val grayPixel = createPixelTexture(BACKGROUND_GRAY)
-    private val titleFont = createFont(size = 58, bold = true)
-    private val splashFont = createFont(size = 18, bold = false)
-    private val buttonFont = createFont(size = 28, bold = true)
+    private val titleFont = createFont(TITLE_FONT_FILE, fallbackSize = 58)
+    private val splashFont = createFont(SPLASH_FONT_FILE, fallbackSize = 18)
+    private val buttonFont = createFont(BUTTON_FONT_FILE, fallbackSize = 28)
     private val splashTexts = loadSplashTexts()
 
     init {
@@ -173,29 +172,23 @@ class MainMenuScreen : KtxScreen {
         }
     }
 
-    private fun createFont(size: Int, bold: Boolean): BitmapFont {
-        val fontFile = Gdx.files.internal(if (bold) "fonts/arial-bold.ttf" else "fonts/arial.ttf")
-        if (!fontFile.exists()) {
-            return BitmapFont().apply {
-                data.setScale(size / DEFAULT_BITMAP_FONT_SIZE)
-                color = Color.BLACK
+    private fun createFont(fontFilePath: String, fallbackSize: Int): BitmapFont {
+        val fontFile = Gdx.files.internal(fontFilePath)
+        if (!fontFile.exists()) return createFallbackFont(fallbackSize)
+
+        return BitmapFont(fontFile).apply {
+            regions.forEach { region ->
+                region.texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
             }
-        }
-
-        val parameter = FreeTypeFontGenerator.FreeTypeFontParameter().apply {
-            this.size = size
             color = Color.BLACK
-            minFilter = Texture.TextureFilter.Linear
-            magFilter = Texture.TextureFilter.Linear
-        }
-
-        val generator = FreeTypeFontGenerator(fontFile)
-        return try {
-            generator.generateFont(parameter)
-        } finally {
-            generator.dispose()
         }
     }
+
+    private fun createFallbackFont(size: Int): BitmapFont =
+        BitmapFont().apply {
+            data.setScale(size / DEFAULT_BITMAP_FONT_SIZE)
+            color = Color.BLACK
+        }
 
     private fun loadSplashTexts(): List<String> {
         val splashesFile = Gdx.files.internal(SPLASHES_FILE)
@@ -222,6 +215,9 @@ class MainMenuScreen : KtxScreen {
         const val VIRTUAL_HEIGHT = 640f
         private const val DEFAULT_BITMAP_FONT_SIZE = 15f
         private const val SPLASHES_FILE = "splashes.txt"
+        private const val TITLE_FONT_FILE = "fonts/carlito-title.fnt"
+        private const val SPLASH_FONT_FILE = "fonts/carlito-splash.fnt"
+        private const val BUTTON_FONT_FILE = "fonts/carlito-button.fnt"
 
         private val BACKGROUND_GRAY = Color(0xEAEAEAFF.toInt())
         private val DEFAULT_SPLASH_TEXTS = listOf(
