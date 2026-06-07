@@ -177,6 +177,7 @@ class MainMenuScreen : KtxScreen {
         if (!fontFile.exists()) return createFallbackFont(fallbackSize)
 
         return BitmapFont(fontFile).apply {
+            data.setScale(FONT_ATLAS_SCALE)
             regions.forEach { region ->
                 region.texture.setFilter(Texture.TextureFilter.Linear, Texture.TextureFilter.Linear)
             }
@@ -218,6 +219,7 @@ class MainMenuScreen : KtxScreen {
         private const val TITLE_FONT_FILE = "fonts/carlito-title.fnt"
         private const val SPLASH_FONT_FILE = "fonts/carlito-splash.fnt"
         private const val BUTTON_FONT_FILE = "fonts/carlito-button.fnt"
+        private const val FONT_ATLAS_SCALE = 0.5f
 
         private val BACKGROUND_GRAY = Color(0xEAEAEAFF.toInt())
         private val DEFAULT_SPLASH_TEXTS = listOf(
