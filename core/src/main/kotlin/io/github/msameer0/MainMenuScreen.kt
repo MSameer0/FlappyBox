@@ -105,8 +105,8 @@ class MainMenuScreen : KtxScreen {
         val start = menuButton("Start", buttonStyle) {
             // TODO: Start gameplay once the gameplay screen exists.
         }
-        val settings = menuButton("Settings", buttonStyle) {
-            // TODO: Open settings once the settings screen exists.
+        val leaderboard = menuButton("Leaderboard", buttonStyle) {
+            // TODO: Open leaderboard once the leaderboard screen exists.
         }
 
         return Table().apply {
@@ -116,7 +116,7 @@ class MainMenuScreen : KtxScreen {
             add(title).width(VIRTUAL_WIDTH).padBottom(8f).row()
             add(splash).width(300f).padBottom(88f).row()
             add(start).width(220f).height(56f).padBottom(10f).row()
-            add(settings).width(220f).height(56f)
+            add(leaderboard).width(220f).height(56f)
         }
     }
 
