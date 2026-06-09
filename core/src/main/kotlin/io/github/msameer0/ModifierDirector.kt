@@ -5,6 +5,9 @@ import kotlin.random.Random
 class ModifierDirector(private val seed: Int = DEFAULT_SEED) {
     private var random = Random(seed)
     private var timeUntilNextModifier = 0f
+    private var pendingDuration = 0f
+    var pendingModifier: PendingModifier? = null
+        private set
 
     init {
         reset()
@@ -13,6 +16,8 @@ class ModifierDirector(private val seed: Int = DEFAULT_SEED) {
     fun reset(score: Int = 0) {
         random = Random(seed)
         timeUntilNextModifier = randomIn(difficultyFor(score).gapRange)
+        pendingDuration = 0f
+        pendingModifier = null
     }
 
     fun update(
@@ -21,17 +26,33 @@ class ModifierDirector(private val seed: Int = DEFAULT_SEED) {
         activeModifierTypes: Set<ModifierType>,
         activateModifier: (ModifierType, Float) -> Unit
     ) {
+        pendingModifier?.let { pending ->
+            pending.warningTimeRemaining -= delta
+            if (pending.warningTimeRemaining <= 0f) {
+                val difficulty = difficultyFor(score)
+                if (pending.type !in activeModifierTypes && activeModifierTypes.size < difficulty.maxActiveModifiers) {
+                    activateModifier(pending.type, pendingDuration)
+                }
+                pendingModifier = null
+                pendingDuration = 0f
+                timeUntilNextModifier = randomIn(difficultyFor(score).gapRange)
+            }
+            return
+        }
+
         val difficulty = difficultyFor(score)
         if (activeModifierTypes.size >= difficulty.maxActiveModifiers) return
 
-        val candidates = difficulty.allowedModifiers.filterNot { it in activeModifierTypes }
+        val candidates = difficulty.allowedModifiers.filter { modifier ->
+            modifier !in activeModifierTypes && !modifier.conflictsWith(activeModifierTypes)
+        }
         if (candidates.isEmpty()) return
 
         timeUntilNextModifier -= delta
         if (timeUntilNextModifier > 0f) return
 
-        activateModifier(candidates.random(), randomIn(difficulty.durationRange))
-        timeUntilNextModifier = randomIn(difficultyFor(score).gapRange)
+        pendingModifier = PendingModifier(candidates.random(), WARNING_SECONDS)
+        pendingDuration = randomIn(difficulty.durationRange)
     }
 
     private fun List<ModifierType>.random(): ModifierType =
@@ -39,6 +60,9 @@ class ModifierDirector(private val seed: Int = DEFAULT_SEED) {
 
     private fun randomIn(range: SecondsRange): Float =
         random.nextFloat() * (range.max - range.min) + range.min
+
+    private fun ModifierType.conflictsWith(activeModifierTypes: Set<ModifierType>): Boolean =
+        this in SPEED_MODIFIERS && activeModifierTypes.any { it in SPEED_MODIFIERS }
 
     private fun difficultyFor(score: Int): ModifierDifficulty =
         when {
@@ -103,5 +127,12 @@ class ModifierDirector(private val seed: Int = DEFAULT_SEED) {
 
     companion object {
         private const val DEFAULT_SEED = 0xF1A99B0
+        const val WARNING_SECONDS = 3f
+
+        private val SPEED_MODIFIERS = setOf(
+            ModifierType.SLOW_SPEED,
+            ModifierType.NORMAL_SPEED,
+            ModifierType.FAST_SPEED
+        )
     }
 }

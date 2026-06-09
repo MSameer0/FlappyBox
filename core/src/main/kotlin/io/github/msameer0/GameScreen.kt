@@ -29,6 +29,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private val frameRenderer = PhoneFrameRenderer(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
     private val hudFont = createFont(HUD_FONT_FILE, HUD_FONT_SCALE)
     private val centerFont = createFont(HUD_FONT_FILE, CENTER_FONT_SCALE)
+    private val warningFont = createFont(WARNING_FONT_FILE, WARNING_FONT_SCALE)
     private val layout = GlyphLayout()
     private val touchPoint = Vector2()
     private val retryButton = Rectangle(BUTTON_X, BUTTON_RETRY_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
@@ -147,6 +148,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         frameRenderer.dispose()
         hudFont.disposeSafely()
         centerFont.disposeSafely()
+        warningFont.disposeSafely()
     }
 
     private fun resetGame() {
@@ -323,6 +325,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         drawLines(hudLines, palette.foreground)
         drawLinesClippedToForegroundGeometry(hudLines, palette.background)
 
+        if (!gameOver) {
+            drawPendingModifierWarning(palette)
+        }
+
         if (gameOver) {
             drawCentered("Game Over", PLATE_Y + PLATE_HEIGHT - 54f, centerFont)
             drawCentered("Retry", retryButton.y + 31f, hudFont)
@@ -331,6 +337,44 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
         batch.end()
     }
+
+    private fun drawPendingModifierWarning(palette: GameplayPalette) {
+        val pendingModifier = modifierDirector.pendingModifier ?: return
+        val alpha = warningAlpha(pendingModifier)
+        if (alpha <= 0f) return
+
+        val text = warningText(pendingModifier.type)
+        layout.setText(warningFont, text)
+
+        val warningLine = HudLine(
+            text = text,
+            x = (VIRTUAL_WIDTH - layout.width) * 0.5f,
+            y = WARNING_TEXT_Y,
+            font = warningFont
+        )
+
+        drawLines(listOf(warningLine), palette.foreground.withAlpha(alpha))
+        drawLinesClippedToForegroundGeometry(listOf(warningLine), palette.background.withAlpha(alpha))
+    }
+
+    private fun warningAlpha(pendingModifier: PendingModifier): Float {
+        val elapsed = ModifierDirector.WARNING_SECONDS - pendingModifier.warningTimeRemaining
+        val fadeIn = min(1f, elapsed / WARNING_FADE_SECONDS)
+        val fadeOut = min(1f, pendingModifier.warningTimeRemaining / WARNING_FADE_SECONDS)
+        return smoothStep(min(fadeIn, fadeOut))
+    }
+
+    private fun warningText(type: ModifierType): String =
+        when (type) {
+            ModifierType.FLIPPED_GRAVITY -> "GRAVITY FLIP INCOMING"
+            ModifierType.SLOW_SPEED -> "SLOW MOTION"
+            ModifierType.NORMAL_SPEED -> "NORMAL SPEED"
+            ModifierType.FAST_SPEED -> "SPEED UP"
+            ModifierType.MIRROR_MODE -> "MIRROR MODE"
+            ModifierType.SMALL_SIZE -> "SMALL BOX"
+            ModifierType.NORMAL_SIZE -> "NORMAL BOX"
+            ModifierType.BIG_SIZE -> "BIG BOX"
+        }
 
     private fun drawLines(lines: List<HudLine>, color: Color) {
         lines.forEach { line ->
@@ -442,6 +486,9 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private fun smoothStep(value: Float): Float =
         value * value * (3f - 2f * value)
 
+    private fun Color.withAlpha(alpha: Float): Color =
+        Color(r, g, b, alpha)
+
     private fun drawCentered(text: String, y: Float, textFont: BitmapFont) {
         textFont.color = Color.BLACK
         layout.setText(textFont, text)
@@ -516,8 +563,12 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val PREFERENCES_NAME = "flappy-box"
         private const val HIGH_SCORE_KEY = "high-score"
         private const val HUD_FONT_FILE = "fonts/carlito-splash.fnt"
+        private const val WARNING_FONT_FILE = "fonts/arial-warning.fnt"
         private const val THEME_SCORE_INTERVAL = 50
         private const val THEME_TRANSITION_SECONDS = 1.35f
+        private const val WARNING_FADE_SECONDS = 0.65f
+        private const val WARNING_TEXT_Y = VIRTUAL_HEIGHT * 0.62f
+        private const val WARNING_FONT_SCALE = 0.44f
         private const val PLATE_WIDTH = 240f
         private const val PLATE_HEIGHT = 214f
         private const val PLATE_X = (VIRTUAL_WIDTH - PLATE_WIDTH) * 0.5f

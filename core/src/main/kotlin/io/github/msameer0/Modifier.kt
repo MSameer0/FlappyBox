@@ -15,3 +15,8 @@ data class ActiveModifier(
     val type: ModifierType,
     var timeRemaining: Float
 )
+
+data class PendingModifier(
+    val type: ModifierType,
+    var warningTimeRemaining: Float
+)
