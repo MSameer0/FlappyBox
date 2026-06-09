@@ -3,6 +3,7 @@ package io.github.msameer0
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.InputAdapter
+import com.badlogic.gdx.Net
 import com.badlogic.gdx.Preferences
 import com.badlogic.gdx.audio.Sound
 import com.badlogic.gdx.graphics.Color
@@ -15,6 +16,7 @@ import com.badlogic.gdx.graphics.glutils.ShapeRenderer
 import com.badlogic.gdx.math.MathUtils
 import com.badlogic.gdx.math.Rectangle
 import com.badlogic.gdx.math.Vector2
+import com.badlogic.gdx.utils.JsonReader
 import com.badlogic.gdx.utils.viewport.FitViewport
 import ktx.app.KtxScreen
 import ktx.assets.disposeSafely
@@ -39,6 +41,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private val touchPoint = Vector2()
     private val retryButton = Rectangle(BUTTON_X, BUTTON_RETRY_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
     private val menuButton = Rectangle(BUTTON_X, BUTTON_MENU_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
+    private val submitScoreButton = Rectangle(BUTTON_X, BUTTON_SUBMIT_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
     private val preferences: Preferences = Gdx.app.getPreferences(PREFERENCES_NAME)
     private val pipes = mutableListOf<Pipe>()
     private val activeModifiers = mutableListOf<ActiveModifier>()
@@ -63,6 +66,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
                 viewport.unproject(touchPoint)
 
                 when {
+                    submitScoreButton.contains(touchPoint) -> promptScoreSubmission()
                     retryButton.contains(touchPoint) -> resetGame()
                     menuButton.contains(touchPoint) -> game.setScreen<MainMenuScreen>()
                 }
@@ -82,6 +86,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private var gameOver = false
     private var themeBlend = 0f
     private var mirrorBlend = 0f
+    private var leaderboardEntries = emptyList<LeaderboardEntry>()
+    private var leaderboardStatus = ""
+    private var submittingScore = false
+    private var scoreSubmitted = false
 
     init {
         resetGame()
@@ -167,6 +175,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         themeBlend = 0f
         mirrorBlend = 0f
         gameOver = false
+        leaderboardEntries = emptyList()
+        leaderboardStatus = ""
+        submittingScore = false
+        scoreSubmitted = false
         activeModifiers.clear()
         modifierDirector.reset(score)
         pipes.clear()
@@ -300,6 +312,108 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         gameOver = true
         playSound(deathSound, DEATH_SOUND_VOLUME)
         saveHighScoreIfNeeded()
+        loadLeaderboard()
+    }
+
+    private fun promptScoreSubmission() {
+        if (submittingScore || scoreSubmitted || score <= 0) return
+
+        Gdx.input.getTextInput(
+            object : Input.TextInputListener {
+                override fun input(text: String) {
+                    submitScore(text)
+                }
+
+                override fun canceled() = Unit
+            },
+            "Submit Score",
+            "",
+            "Username"
+        )
+    }
+
+    private fun submitScore(username: String) {
+        val trimmedName = username.trim()
+        if (trimmedName.isEmpty()) {
+            leaderboardStatus = "Enter a name to submit"
+            return
+        }
+
+        submittingScore = true
+        leaderboardStatus = "Submitting score..."
+
+        val request = Net.HttpRequest(Net.HttpMethods.POST).apply {
+            url = LEADERBOARD_API_PATH
+            setHeader("Content-Type", "application/json")
+            content = """{"name":${trimmedName.toJsonString()},"score":$score}"""
+        }
+
+        Gdx.net.sendHttpRequest(request, object : Net.HttpResponseListener {
+            override fun handleHttpResponse(response: Net.HttpResponse) {
+                submittingScore = false
+
+                if (response.status.statusCode !in 200..299) {
+                    leaderboardStatus = "Leaderboard unavailable"
+                    return
+                }
+
+                scoreSubmitted = true
+                leaderboardStatus = "Score submitted"
+                loadLeaderboard()
+            }
+
+            override fun failed(t: Throwable) {
+                submittingScore = false
+                leaderboardStatus = "Leaderboard unavailable"
+            }
+
+            override fun cancelled() {
+                submittingScore = false
+            }
+        })
+    }
+
+    private fun loadLeaderboard() {
+        leaderboardStatus = "Loading leaderboard..."
+
+        val request = Net.HttpRequest(Net.HttpMethods.GET).apply {
+            url = "$LEADERBOARD_API_PATH?limit=$LEADERBOARD_VISIBLE_ENTRIES"
+        }
+
+        Gdx.net.sendHttpRequest(request, object : Net.HttpResponseListener {
+            override fun handleHttpResponse(response: Net.HttpResponse) {
+                if (response.status.statusCode !in 200..299) {
+                    leaderboardStatus = "Leaderboard unavailable"
+                    return
+                }
+
+                leaderboardEntries = parseLeaderboard(response.resultAsString)
+                leaderboardStatus = if (leaderboardEntries.isEmpty()) "No scores yet" else ""
+            }
+
+            override fun failed(t: Throwable) {
+                leaderboardStatus = "Leaderboard unavailable"
+            }
+
+            override fun cancelled() = Unit
+        })
+    }
+
+    private fun parseLeaderboard(json: String): List<LeaderboardEntry> {
+        val root = JsonReader().parse(json)
+        val entries = root.get("entries") ?: return emptyList()
+        val parsedEntries = mutableListOf<LeaderboardEntry>()
+        var entry = entries.child
+
+        while (entry != null && parsedEntries.size < LEADERBOARD_VISIBLE_ENTRIES) {
+            parsedEntries += LeaderboardEntry(
+                name = entry.getString("name", "Player"),
+                score = entry.getInt("score", 0)
+            )
+            entry = entry.next
+        }
+
+        return parsedEntries
     }
 
     private fun saveHighScoreIfNeeded() {
@@ -386,6 +500,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
         shapes.color = Color.BLACK
         drawRectOutline(PLATE_X, PLATE_Y, PLATE_WIDTH, PLATE_HEIGHT, BORDER_SIZE)
+        drawRectOutline(submitScoreButton.x, submitScoreButton.y, submitScoreButton.width, submitScoreButton.height, BORDER_SIZE)
         drawRectOutline(retryButton.x, retryButton.y, retryButton.width, retryButton.height, BORDER_SIZE)
         drawRectOutline(menuButton.x, menuButton.y, menuButton.width, menuButton.height, BORDER_SIZE)
         shapes.end()
@@ -415,13 +530,39 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         }
 
         if (gameOver) {
-            drawCentered("Game Over", PLATE_Y + PLATE_HEIGHT - 54f, centerFont)
-            drawCentered("Retry", retryButton.y + 31f, hudFont)
-            drawCentered("Main Menu", menuButton.y + 31f, hudFont)
+            drawGameOverText()
         }
 
         batch.end()
     }
+
+    private fun drawGameOverText() {
+        drawCentered("Game Over", PLATE_Y + PLATE_HEIGHT - 38f, centerFont)
+        drawCentered("Top Scores", PLATE_Y + PLATE_HEIGHT - 78f, hudFont)
+
+        if (leaderboardEntries.isEmpty()) {
+            drawCentered(leaderboardStatus.ifEmpty { "No scores yet" }, PLATE_Y + PLATE_HEIGHT - 106f, hudFont)
+        } else {
+            leaderboardEntries.forEachIndexed { index, entry ->
+                drawCentered("${index + 1}. ${entry.name}: ${entry.score}", PLATE_Y + PLATE_HEIGHT - 106f - LEADERBOARD_LINE_SPACING * index, hudFont)
+            }
+        }
+
+        if (leaderboardStatus.isNotEmpty() && leaderboardEntries.isNotEmpty()) {
+            drawCentered(leaderboardStatus, submitScoreButton.y + BUTTON_HEIGHT + 19f, hudFont)
+        }
+
+        drawCentered(submitScoreButtonText(), submitScoreButton.y + 31f, hudFont)
+        drawCentered("Retry", retryButton.y + 31f, hudFont)
+        drawCentered("Main Menu", menuButton.y + 31f, hudFont)
+    }
+
+    private fun submitScoreButtonText(): String =
+        when {
+            submittingScore -> "Submitting..."
+            scoreSubmitted -> "Submitted"
+            else -> "Submit Score"
+        }
 
     private fun drawPendingModifierWarning(palette: GameplayPalette) {
         val pendingModifier = modifierDirector.pendingModifier ?: return
@@ -641,6 +782,24 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         sound?.play(volume)
     }
 
+    private fun String.toJsonString(): String =
+        buildString {
+            append('"')
+            this@toJsonString.forEach { character ->
+                when (character) {
+                    '\\' -> append("\\\\")
+                    '"' -> append("\\\"")
+                    '\b' -> append("\\b")
+                    '\u000C' -> append("\\f")
+                    '\n' -> append("\\n")
+                    '\r' -> append("\\r")
+                    '\t' -> append("\\t")
+                    else -> append(character)
+                }
+            }
+            append('"')
+        }
+
     private data class HudLine(
         val text: String,
         val x: Float,
@@ -664,6 +823,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         var x: Float,
         val gapY: Float,
         var scored: Boolean = false
+    )
+
+    private data class LeaderboardEntry(
+        val name: String,
+        val score: Int
     )
 
     companion object {
@@ -712,6 +876,9 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val SCORE_SOUND_VOLUME = 0.38f
         private const val DEATH_SOUND_VOLUME = 0.42f
         private const val WARNING_SOUND_VOLUME = 0.34f
+        private const val LEADERBOARD_API_PATH = "/api/leaderboard"
+        private const val LEADERBOARD_VISIBLE_ENTRIES = 3
+        private const val LEADERBOARD_LINE_SPACING = 22f
         private const val THEME_SCORE_INTERVAL = 50
         private const val THEME_TRANSITION_SECONDS = 1.35f
         private const val MIRROR_TRANSITION_SECONDS = 0.7f
@@ -719,14 +886,15 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val WARNING_TEXT_Y = VIRTUAL_HEIGHT * 0.62f
         private const val WARNING_FONT_SCALE = 0.44f
         private const val PLATE_WIDTH = 240f
-        private const val PLATE_HEIGHT = 214f
+        private const val PLATE_HEIGHT = 326f
         private const val PLATE_X = (VIRTUAL_WIDTH - PLATE_WIDTH) * 0.5f
         private const val PLATE_Y = (VIRTUAL_HEIGHT - PLATE_HEIGHT) * 0.5f
         private const val BUTTON_WIDTH = 170f
         private const val BUTTON_HEIGHT = 44f
         private const val BUTTON_X = (VIRTUAL_WIDTH - BUTTON_WIDTH) * 0.5f
-        private const val BUTTON_RETRY_Y = PLATE_Y + 82f
-        private const val BUTTON_MENU_Y = PLATE_Y + 30f
+        private const val BUTTON_SUBMIT_Y = PLATE_Y + 128f
+        private const val BUTTON_RETRY_Y = PLATE_Y + 76f
+        private const val BUTTON_MENU_Y = PLATE_Y + 24f
         private const val BORDER_SIZE = 2f
         private const val DURATION_BAR_HEIGHT = 4f
         private const val DURATION_BAR_GAP = 3f
