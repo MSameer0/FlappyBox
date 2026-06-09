@@ -90,6 +90,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private var leaderboardStatus = ""
     private var submittingScore = false
     private var scoreSubmitted = false
+    private var gravityReturnRelaxedPipesPrepared = false
 
     init {
         resetGame()
@@ -179,6 +180,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         leaderboardStatus = ""
         submittingScore = false
         scoreSubmitted = false
+        gravityReturnRelaxedPipesPrepared = false
         activeModifiers.clear()
         modifierDirector.reset(score)
         pipes.clear()
@@ -191,7 +193,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
             pipes += Pipe(
                 x = VIRTUAL_WIDTH + PIPE_START_OFFSET + PIPE_SPACING * index,
-                gapY = gapY
+                gapY = gapY,
+                gapHeight = PIPE_GAP
             )
         }
     }
@@ -217,14 +220,31 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun updateModifiers(delta: Float) {
+        val flippedGravityModifier = activeModifier(ModifierType.FLIPPED_GRAVITY)
+        if (
+            flippedGravityModifier != null &&
+            !gravityReturnRelaxedPipesPrepared &&
+            flippedGravityModifier.timeRemaining <= GRAVITY_RETURN_RELAX_SECONDS
+        ) {
+            relaxFullyOffscreenQueuedPipes()
+            gravityReturnRelaxedPipesPrepared = true
+        }
+        val hadFlippedGravity = flippedGravityModifier != null
+
         activeModifiers.forEach { modifier ->
             modifier.timeRemaining -= delta
         }
         activeModifiers.removeAll { it.timeRemaining <= 0f }
+
+        if (hadFlippedGravity && !hasModifier(ModifierType.FLIPPED_GRAVITY)) {
+            gravityReturnRelaxedPipesPrepared = false
+            normalizeFullyOffscreenQueuedPipes()
+        }
     }
 
     private fun updateModifierDirector(delta: Float) {
         val hadPendingModifier = modifierDirector.pendingModifier != null
+        val hadPendingGravityWarning = hasPendingGravityWarning()
 
         modifierDirector.update(
             delta = delta,
@@ -233,8 +253,17 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             activateModifier = ::activateModifier
         )
 
-        if (!hadPendingModifier && modifierDirector.pendingModifier != null) {
+        val pendingModifier = modifierDirector.pendingModifier
+        if (!hadPendingModifier && pendingModifier != null) {
             playSound(warningSound, WARNING_SOUND_VOLUME)
+            if (pendingModifier.type == ModifierType.FLIPPED_GRAVITY) {
+                relaxFullyOffscreenQueuedPipes()
+            }
+        }
+
+        if (hadPendingGravityWarning && !hasPendingGravityWarning() && hasModifier(ModifierType.FLIPPED_GRAVITY)) {
+            gravityReturnRelaxedPipesPrepared = false
+            normalizeFullyOffscreenQueuedPipes()
         }
     }
 
@@ -284,9 +313,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
         val farthestPipe = pipes.maxBy { it.x }
         pipes.removeAt(0)
+        val gapHeight = nextPipeGapHeight()
         pipes += Pipe(
             x = farthestPipe.x + PIPE_SPACING,
-            gapY = nextPipeGapY(farthestPipe.gapY)
+            gapY = nextPipeGapY(farthestPipe.gapY, gapHeight),
+            gapHeight = gapHeight
         )
     }
 
@@ -298,7 +329,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         val birdTop = birdY + modifiers.birdSize
         val pipeRight = pipeX + PIPE_WIDTH
         val overlapsPipeX = birdRight > pipeX && birdX < pipeRight
-        val outsideGap = birdY < pipe.gapY || birdTop > pipe.gapY + PIPE_GAP
+        val outsideGap = birdY < pipe.gapY || birdTop > pipe.gapY + pipe.gapHeight
 
         return overlapsPipeX && outsideGap
     }
@@ -438,7 +469,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         pipes.forEach { pipe ->
             val pipeX = renderPipeX(pipe, modifiers)
             shapes.rect(pipeX, 0f, PIPE_WIDTH, pipe.gapY)
-            shapes.rect(pipeX, pipe.gapY + PIPE_GAP, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - PIPE_GAP)
+            shapes.rect(pipeX, pipe.gapY + pipe.gapHeight, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - pipe.gapHeight)
         }
         shapes.rect(renderBirdX(modifiers), birdBottomY(modifiers), modifiers.birdSize, modifiers.birdSize)
 
@@ -652,7 +683,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         pipes.forEach { pipe ->
             val pipeX = renderPipeX(pipe, modifiers)
             rectangles += Rectangle(pipeX, 0f, PIPE_WIDTH, pipe.gapY)
-            rectangles += Rectangle(pipeX, pipe.gapY + PIPE_GAP, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - PIPE_GAP)
+            rectangles += Rectangle(pipeX, pipe.gapY + pipe.gapHeight, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - pipe.gapHeight)
         }
         rectangles += Rectangle(renderBirdX(modifiers), birdBottomY(modifiers), modifiers.birdSize, modifiers.birdSize)
         return rectangles
@@ -685,6 +716,12 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private fun hasModifier(type: ModifierType): Boolean =
         activeModifiers.any { it.type == type }
+
+    private fun activeModifier(type: ModifierType): ActiveModifier? =
+        activeModifiers.firstOrNull { it.type == type }
+
+    private fun hasPendingGravityWarning(): Boolean =
+        modifierDirector.pendingModifier?.type == ModifierType.FLIPPED_GRAVITY
 
     private fun activeModifierTypes(): Set<ModifierType> =
         activeModifiers.mapTo(mutableSetOf()) { it.type }
@@ -746,12 +783,57 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         textFont.draw(batch, text, (VIRTUAL_WIDTH - layout.width) * 0.5f, y)
     }
 
-    private fun nextPipeGapY(previousGapY: Float): Float {
+    private fun nextPipeGapHeight(): Float {
+        if (hasGravityRelaxedPipeWindow()) return RELAXED_PIPE_GAP
+
+        return PIPE_GAP
+    }
+
+    private fun hasGravityRelaxedPipeWindow(): Boolean =
+        hasPendingGravityWarning() || isGravityReturnRelaxWindow()
+
+    private fun isGravityReturnRelaxWindow(): Boolean =
+        activeModifier(ModifierType.FLIPPED_GRAVITY)?.timeRemaining
+            ?.let { timeRemaining -> timeRemaining <= GRAVITY_RETURN_RELAX_SECONDS } == true
+
+    private fun relaxFullyOffscreenQueuedPipes(maxCount: Int = Int.MAX_VALUE): Int {
+        var relaxedCount = 0
+        pipes
+            .filter { pipe -> pipe.x >= VIRTUAL_WIDTH && pipe.gapHeight != RELAXED_PIPE_GAP }
+            .sortedBy { pipe -> pipe.x }
+            .take(maxCount)
+            .forEach { pipe ->
+                pipe.gapY = centeredGapY(RELAXED_PIPE_GAP)
+                pipe.gapHeight = RELAXED_PIPE_GAP
+                relaxedCount += 1
+            }
+
+        return relaxedCount
+    }
+
+    private fun normalizeFullyOffscreenQueuedPipes() {
+        pipes
+            .filter { pipe -> pipe.x >= VIRTUAL_WIDTH && pipe.gapHeight == RELAXED_PIPE_GAP }
+            .forEach { pipe ->
+                pipe.gapY = nextPipeGapY(pipe.gapY)
+                pipe.gapHeight = PIPE_GAP
+            }
+    }
+
+    private fun nextPipeGapY(previousGapY: Float, gapHeight: Float = PIPE_GAP): Float {
+        if (gapHeight == RELAXED_PIPE_GAP) return centeredGapY(gapHeight)
+
         val maxStep = pipeGapMaxStep()
         val minGapY = max(MIN_GAP_Y, previousGapY - maxStep)
-        val maxGapY = min(MAX_GAP_Y, previousGapY + maxStep)
+        val maxGapY = min(maxGapY(gapHeight), previousGapY + maxStep)
         return MathUtils.random(minGapY, maxGapY)
     }
+
+    private fun centeredGapY(gapHeight: Float): Float =
+        (VIRTUAL_HEIGHT - gapHeight) * 0.5f
+
+    private fun maxGapY(gapHeight: Float): Float =
+        VIRTUAL_HEIGHT - MIN_GAP_Y - gapHeight
 
     private fun pipeGapMaxStep(): Float =
         when {
@@ -821,7 +903,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private data class Pipe(
         var x: Float,
-        val gapY: Float,
+        var gapY: Float,
+        var gapHeight: Float,
         var scored: Boolean = false
     )
 
@@ -846,12 +929,13 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val FAST_SPEED_MULTIPLIER = 1.35f
         private const val PIPE_WIDTH = NORMAL_BIRD_SIZE
         private const val PIPE_GAP = 140f
+        private const val RELAXED_PIPE_GAP = 285f
+        private const val GRAVITY_RETURN_RELAX_SECONDS = 3.75f
         private const val PIPE_SPEED = 138f
         private const val PIPE_SPACING = 155f
         private const val PIPE_START_OFFSET = 112f
         private const val PIPE_COUNT = 5
         private const val MIN_GAP_Y = 70f
-        private const val MAX_GAP_Y = VIRTUAL_HEIGHT - MIN_GAP_Y - PIPE_GAP
         private const val STARTING_GAP_Y = (VIRTUAL_HEIGHT - PIPE_GAP) * 0.5f
         private const val PIPE_GAP_STEP_SCORE_0 = 34f
         private const val PIPE_GAP_STEP_SCORE_10 = 46f
