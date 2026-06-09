@@ -36,6 +36,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private val preferences: Preferences = Gdx.app.getPreferences(PREFERENCES_NAME)
     private val pipes = mutableListOf<Pipe>()
     private val activeModifiers = mutableListOf<ActiveModifier>()
+    private val modifierDirector = ModifierDirector()
     private val input = object : InputAdapter() {
         override fun keyDown(keycode: Int): Boolean {
             if (gameOver && keycode == Input.Keys.ESCAPE) {
@@ -116,6 +117,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         updateModifiers(clampedDelta)
 
         if (!gameOver) {
+            updateModifierDirector(clampedDelta)
             updateGame(clampedDelta)
             updateTheme(clampedDelta)
         }
@@ -154,6 +156,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         themeBlend = 0f
         gameOver = false
         activeModifiers.clear()
+        modifierDirector.reset(score)
         pipes.clear()
 
         repeat(PIPE_COUNT) { index ->
@@ -188,6 +191,15 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             modifier.timeRemaining -= delta
         }
         activeModifiers.removeAll { it.timeRemaining <= 0f }
+    }
+
+    private fun updateModifierDirector(delta: Float) {
+        modifierDirector.update(
+            delta = delta,
+            score = score,
+            activeModifierTypes = activeModifierTypes(),
+            activateModifier = ::activateModifier
+        )
     }
 
     private fun updateBird(delta: Float, modifiers: ModifierState) {
@@ -403,6 +415,9 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private fun hasModifier(type: ModifierType): Boolean =
         activeModifiers.any { it.type == type }
+
+    private fun activeModifierTypes(): Set<ModifierType> =
+        activeModifiers.mapTo(mutableSetOf()) { it.type }
 
     private fun renderBirdX(modifiers: ModifierState): Float =
         if (modifiers.mirrored) VIRTUAL_WIDTH - BIRD_BASE_X - modifiers.birdSize else BIRD_BASE_X
