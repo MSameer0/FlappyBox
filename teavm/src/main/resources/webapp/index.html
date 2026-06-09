@@ -3,25 +3,51 @@
     <head>
         <title>%TITLE%</title>
         <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
-        <link rel="icon" href="data:,">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+        <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
+        <link rel="apple-touch-icon" href="icon.png">
         <style>
+            * {
+                box-sizing: border-box;
+            }
+
             html,
             body {
                 width: 100%;
                 height: 100%;
+                min-height: 100%;
                 margin: 0;
                 padding: 0;
                 overflow: hidden;
                 background: #fff;
+                overscroll-behavior: none;
             }
 
             body {
+                position: fixed;
+                inset: 0;
+                width: 100vw;
+                height: 100vh;
+                height: 100dvh;
                 display: flex;
                 justify-content: center;
                 align-items: center;
+                touch-action: manipulation;
+            }
+
+            #game-container {
+                width: 100vw;
+                height: 100vh;
+                height: 100dvh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                overflow: hidden;
             }
 
             #canvas {
+                width: 100%;
+                height: 100%;
                 border: none;
                 display: block;
                 outline: none;
@@ -29,7 +55,7 @@
         </style>
     </head>
     <body oncontextmenu="return false">
-        <div>
+        <div id="game-container">
             <canvas id="canvas"></canvas>
         </div>
         <script>
