@@ -72,6 +72,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private var score = 0
     private var highScore = preferences.getInteger(HIGH_SCORE_KEY, 0)
     private var gameOver = false
+    private var themeBlend = 0f
 
     init {
         resetGame()
@@ -89,6 +90,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         val clampedDelta = min(delta, MAX_DELTA)
         if (!gameOver) {
             updateGame(clampedDelta)
+            updateTheme(clampedDelta)
         }
 
         frameRenderer.draw()
@@ -122,6 +124,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         birdY = (VIRTUAL_HEIGHT - BIRD_SIZE) * 0.5f
         birdVelocity = 0f
         score = 0
+        themeBlend = 0f
         gameOver = false
         pipes.clear()
 
@@ -161,6 +164,17 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         }
     }
 
+    private fun updateTheme(delta: Float) {
+        val targetBlend = targetThemeBlend()
+        val step = delta / THEME_TRANSITION_SECONDS
+
+        themeBlend = if (themeBlend < targetBlend) {
+            min(targetBlend, themeBlend + step)
+        } else {
+            max(targetBlend, themeBlend - step)
+        }
+    }
+
     private fun recyclePipes() {
         val firstPipe = pipes.firstOrNull() ?: return
         if (firstPipe.x + PIPE_WIDTH >= 0f) return
@@ -197,12 +211,14 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun drawGame() {
+        val palette = gameplayPalette()
+
         shapes.projectionMatrix = viewport.camera.combined
         shapes.begin(ShapeRenderer.ShapeType.Filled)
-        shapes.color = Color.WHITE
+        shapes.color = palette.background
         shapes.rect(0f, 0f, VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
 
-        shapes.color = Color.BLACK
+        shapes.color = palette.foreground
 
         pipes.forEach { pipe ->
             shapes.rect(pipe.x, 0f, PIPE_WIDTH, pipe.gapY)
@@ -234,6 +250,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun drawHud() {
+        val palette = gameplayPalette()
         val hudLines = listOf(
             HudLine("Score: $score", HUD_PADDING, VIRTUAL_HEIGHT - HUD_TOP_PADDING, hudFont),
             HudLine("High: $highScore", HUD_PADDING, VIRTUAL_HEIGHT - HUD_TOP_PADDING - HUD_LINE_SPACING, hudFont)
@@ -241,8 +258,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
         batch.projectionMatrix = viewport.camera.combined
         batch.begin()
-        drawLines(hudLines, Color.BLACK)
-        drawLinesClippedToBlackGeometry(hudLines)
+        drawLines(hudLines, palette.foreground)
+        drawLinesClippedToForegroundGeometry(hudLines, palette.background)
 
         if (gameOver) {
             drawCentered("Game Over", PLATE_Y + PLATE_HEIGHT - 54f, centerFont)
@@ -260,15 +277,15 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         }
     }
 
-    private fun drawLinesClippedToBlackGeometry(lines: List<HudLine>) {
+    private fun drawLinesClippedToForegroundGeometry(lines: List<HudLine>, color: Color) {
         lines.forEach { line ->
-            line.font.color = Color.WHITE
+            line.font.color = color
         }
 
         batch.flush()
         Gdx.gl.glEnable(GL20.GL_SCISSOR_TEST)
-        blackGeometry().forEach { blackRect ->
-            val scissor = toScreenScissor(blackRect)
+        foregroundGeometry().forEach { foregroundRect ->
+            val scissor = toScreenScissor(foregroundRect)
             batch.flush()
 
             if (scissor.width > 0f && scissor.height > 0f) {
@@ -297,7 +314,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         return Rectangle(left, bottom, max(0f, right - left), max(0f, top - bottom))
     }
 
-    private fun blackGeometry(): List<Rectangle> {
+    private fun foregroundGeometry(): List<Rectangle> {
         val rectangles = mutableListOf<Rectangle>()
         pipes.forEach { pipe ->
             rectangles += Rectangle(pipe.x, 0f, PIPE_WIDTH, pipe.gapY)
@@ -306,6 +323,23 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         rectangles += Rectangle(BIRD_X, birdY, BIRD_SIZE, BIRD_SIZE)
         return rectangles
     }
+
+    private fun gameplayPalette(): GameplayPalette {
+        val easedBlend = smoothStep(themeBlend)
+        val backgroundShade = 1f - easedBlend
+        val foregroundShade = easedBlend
+
+        return GameplayPalette(
+            background = Color(backgroundShade, backgroundShade, backgroundShade, 1f),
+            foreground = Color(foregroundShade, foregroundShade, foregroundShade, 1f)
+        )
+    }
+
+    private fun targetThemeBlend(): Float =
+        if ((score / THEME_SCORE_INTERVAL) % 2 == 1) 1f else 0f
+
+    private fun smoothStep(value: Float): Float =
+        value * value * (3f - 2f * value)
 
     private fun drawCentered(text: String, y: Float, textFont: BitmapFont) {
         textFont.color = Color.BLACK
@@ -332,6 +366,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         val x: Float,
         val y: Float,
         val font: BitmapFont
+    )
+
+    private data class GameplayPalette(
+        val background: Color,
+        val foreground: Color
     )
 
     private data class Pipe(
@@ -363,6 +402,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val PREFERENCES_NAME = "flappy-box"
         private const val HIGH_SCORE_KEY = "high-score"
         private const val HUD_FONT_FILE = "fonts/carlito-splash.fnt"
+        private const val THEME_SCORE_INTERVAL = 50
+        private const val THEME_TRANSITION_SECONDS = 1.35f
         private const val PLATE_WIDTH = 240f
         private const val PLATE_HEIGHT = 214f
         private const val PLATE_X = (VIRTUAL_WIDTH - PLATE_WIDTH) * 0.5f
