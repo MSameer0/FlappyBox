@@ -70,7 +70,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         }
     }
 
-    private var birdY = 0f
+    private var birdCenterY = 0f
     private var birdVelocity = 0f
     private var score = 0
     private var highScore = preferences.getInteger(HIGH_SCORE_KEY, 0)
@@ -87,13 +87,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         removeConflictingModifiers(type)
 
         val existingIndex = activeModifiers.indexOfFirst { it.type == type }
-        val timeRemaining = if (existingIndex >= 0) {
-            max(activeModifiers.removeAt(existingIndex).timeRemaining, duration)
-        } else {
-            duration
-        }
+        val existingModifier = if (existingIndex >= 0) activeModifiers.removeAt(existingIndex) else null
+        val timeRemaining = max(existingModifier?.timeRemaining ?: 0f, duration)
+        val totalDuration = max(existingModifier?.duration ?: 0f, duration)
 
-        activeModifiers += ActiveModifier(type, timeRemaining)
+        activeModifiers += ActiveModifier(type, timeRemaining, totalDuration)
     }
 
     private fun removeConflictingModifiers(type: ModifierType) {
@@ -152,7 +150,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun resetGame() {
-        birdY = (VIRTUAL_HEIGHT - NORMAL_BIRD_SIZE) * 0.5f
+        birdCenterY = VIRTUAL_HEIGHT * 0.5f
         birdVelocity = 0f
         score = 0
         themeBlend = 0f
@@ -206,14 +204,14 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private fun updateBird(delta: Float, modifiers: ModifierState) {
         birdVelocity += GRAVITY_ACCELERATION * modifiers.gravityDirection * delta
-        birdY += birdVelocity * delta
+        birdCenterY += birdVelocity * delta
     }
 
     private fun updatePipes(delta: Float, modifiers: ModifierState) {
         pipes.forEach { pipe ->
             pipe.x -= PIPE_SPEED * modifiers.speedMultiplier * delta
 
-            if (!pipe.scored && pipe.x + PIPE_WIDTH < BIRD_BASE_X) {
+            if (!pipe.scored && pipe.x + PIPE_WIDTH < birdLeftX(modifiers)) {
                 pipe.scored = true
                 score += 1
                 saveHighScoreIfNeeded()
@@ -245,7 +243,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun collidesWithBird(pipe: Pipe, modifiers: ModifierState): Boolean {
-        val birdX = BIRD_BASE_X
+        val birdX = birdLeftX(modifiers)
+        val birdY = birdBottomY(modifiers)
         val pipeX = pipe.x
         val birdRight = birdX + modifiers.birdSize
         val birdTop = birdY + modifiers.birdSize
@@ -257,7 +256,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun isBirdOutOfBounds(modifiers: ModifierState): Boolean =
-        birdY < 0f || birdY + modifiers.birdSize > VIRTUAL_HEIGHT
+        birdBottomY(modifiers) < 0f || birdTopY(modifiers) > VIRTUAL_HEIGHT
 
     private fun endGame() {
         gameOver = true
@@ -288,9 +287,56 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             shapes.rect(pipeX, 0f, PIPE_WIDTH, pipe.gapY)
             shapes.rect(pipeX, pipe.gapY + PIPE_GAP, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - PIPE_GAP)
         }
-        shapes.rect(renderBirdX(modifiers), birdY, modifiers.birdSize, modifiers.birdSize)
+        shapes.rect(renderBirdX(modifiers), birdBottomY(modifiers), modifiers.birdSize, modifiers.birdSize)
 
         shapes.end()
+
+        drawActiveModifierDurationBars(palette)
+    }
+
+    private fun drawActiveModifierDurationBars(palette: GameplayPalette) {
+        if (gameOver) return
+
+        val bars = activeModifierBars()
+        if (bars.isEmpty()) return
+
+        shapes.projectionMatrix = viewport.camera.combined
+        shapes.begin(ShapeRenderer.ShapeType.Filled)
+        shapes.color = palette.foreground
+        drawRectangles(bars)
+        shapes.end()
+
+        Gdx.gl.glEnable(GL20.GL_SCISSOR_TEST)
+        foregroundGeometry().forEach { foregroundRect ->
+            val scissor = toScreenScissor(foregroundRect)
+            if (scissor.width > 0f && scissor.height > 0f) {
+                Gdx.gl.glScissor(scissor.x.toInt(), scissor.y.toInt(), scissor.width.toInt(), scissor.height.toInt())
+                shapes.begin(ShapeRenderer.ShapeType.Filled)
+                shapes.color = palette.background
+                drawRectangles(bars)
+                shapes.end()
+            }
+        }
+        Gdx.gl.glDisable(GL20.GL_SCISSOR_TEST)
+    }
+
+    private fun activeModifierBars(): List<Rectangle> =
+        activeModifiers.mapIndexedNotNull { index, modifier ->
+            if (modifier.duration <= 0f) return@mapIndexedNotNull null
+
+            val progress = (modifier.timeRemaining / modifier.duration).coerceIn(0f, 1f)
+            Rectangle(
+                0f,
+                DURATION_BAR_BOTTOM_PADDING + index * (DURATION_BAR_HEIGHT + DURATION_BAR_GAP),
+                VIRTUAL_WIDTH * progress,
+                DURATION_BAR_HEIGHT
+            )
+        }
+
+    private fun drawRectangles(rectangles: List<Rectangle>) {
+        rectangles.forEach { rectangle ->
+            shapes.rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height)
+        }
     }
 
     private fun drawGameOverPlate() {
@@ -428,7 +474,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             rectangles += Rectangle(pipeX, 0f, PIPE_WIDTH, pipe.gapY)
             rectangles += Rectangle(pipeX, pipe.gapY + PIPE_GAP, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - PIPE_GAP)
         }
-        rectangles += Rectangle(renderBirdX(modifiers), birdY, modifiers.birdSize, modifiers.birdSize)
+        rectangles += Rectangle(renderBirdX(modifiers), birdBottomY(modifiers), modifiers.birdSize, modifiers.birdSize)
         return rectangles
     }
 
@@ -463,8 +509,19 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private fun activeModifierTypes(): Set<ModifierType> =
         activeModifiers.mapTo(mutableSetOf()) { it.type }
 
-    private fun renderBirdX(modifiers: ModifierState): Float =
-        if (modifiers.mirrored) VIRTUAL_WIDTH - BIRD_BASE_X - modifiers.birdSize else BIRD_BASE_X
+    private fun birdLeftX(modifiers: ModifierState): Float =
+        BIRD_CENTER_X - modifiers.birdSize * 0.5f
+
+    private fun birdBottomY(modifiers: ModifierState): Float =
+        birdCenterY - modifiers.birdSize * 0.5f
+
+    private fun birdTopY(modifiers: ModifierState): Float =
+        birdCenterY + modifiers.birdSize * 0.5f
+
+    private fun renderBirdX(modifiers: ModifierState): Float {
+        val birdX = birdLeftX(modifiers)
+        return if (modifiers.mirrored) VIRTUAL_WIDTH - birdX - modifiers.birdSize else birdX
+    }
 
     private fun renderPipeX(pipe: Pipe, modifiers: ModifierState): Float =
         if (modifiers.mirrored) VIRTUAL_WIDTH - pipe.x - PIPE_WIDTH else pipe.x
@@ -539,6 +596,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val VIRTUAL_HEIGHT = MainMenuScreen.VIRTUAL_HEIGHT
         private const val BIRD_BASE_X = 82f
         private const val NORMAL_BIRD_SIZE = 24f
+        private const val BIRD_CENTER_X = BIRD_BASE_X + NORMAL_BIRD_SIZE * 0.5f
         private const val SMALL_SIZE_MULTIPLIER = 0.75f
         private const val NORMAL_SIZE_MULTIPLIER = 1f
         private const val BIG_SIZE_MULTIPLIER = 1.4f
@@ -579,6 +637,9 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val BUTTON_RETRY_Y = PLATE_Y + 82f
         private const val BUTTON_MENU_Y = PLATE_Y + 30f
         private const val BORDER_SIZE = 2f
+        private const val DURATION_BAR_HEIGHT = 4f
+        private const val DURATION_BAR_GAP = 3f
+        private const val DURATION_BAR_BOTTOM_PADDING = 0f
 
         private val SPEED_MODIFIERS = setOf(
             ModifierType.SLOW_SPEED,

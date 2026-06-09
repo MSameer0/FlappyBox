@@ -13,7 +13,8 @@ enum class ModifierType {
 
 data class ActiveModifier(
     val type: ModifierType,
-    var timeRemaining: Float
+    var timeRemaining: Float,
+    val duration: Float
 )
 
 data class PendingModifier(
