@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "bash gradlew :teavm:build",
   "installCommand": "",
-  "outputDirectory": "teavm/build/dist/webapp"
+  "outputDirectory": "teavm/build/dist/webapp",
+  "rewrites": [
+    {
+      "source": "/icon.png",
+      "destination": "/assets/icon.png"
+    }
+  ]
 }
