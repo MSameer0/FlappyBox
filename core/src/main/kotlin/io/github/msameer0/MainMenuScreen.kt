@@ -3,13 +3,10 @@ package io.github.msameer0
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
-import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Pixmap
 import com.badlogic.gdx.graphics.Texture
 import com.badlogic.gdx.graphics.g2d.BitmapFont
-import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.math.MathUtils
-import com.badlogic.gdx.math.Matrix4
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Stage
@@ -22,14 +19,11 @@ import com.badlogic.gdx.utils.Align
 import com.badlogic.gdx.utils.viewport.FitViewport
 import ktx.app.KtxScreen
 import ktx.assets.disposeSafely
-import kotlin.math.min
 
-class MainMenuScreen : KtxScreen {
+class MainMenuScreen(private val game: FlappyBox) : KtxScreen {
     private val viewport = FitViewport(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
     private val stage = Stage(viewport)
-    private val screenBatch = SpriteBatch()
-    private val screenProjection = Matrix4()
-    private val whitePixel = createPixelTexture(Color.WHITE)
+    private val frameRenderer = PhoneFrameRenderer(VIRTUAL_WIDTH, VIRTUAL_HEIGHT)
     private val grayPixel = createPixelTexture(BACKGROUND_GRAY)
     private val titleFont = createFont(TITLE_FONT_FILE, fallbackSize = 58)
     private val splashFont = createFont(SPLASH_FONT_FILE, fallbackSize = 18)
@@ -47,8 +41,7 @@ class MainMenuScreen : KtxScreen {
     }
 
     override fun render(delta: Float) {
-        clearDesktopBackground()
-        drawPhoneShadow()
+        frameRenderer.draw()
 
         viewport.apply()
         stage.act(delta)
@@ -67,8 +60,7 @@ class MainMenuScreen : KtxScreen {
 
     override fun dispose() {
         stage.disposeSafely()
-        screenBatch.disposeSafely()
-        whitePixel.disposeSafely()
+        frameRenderer.dispose()
         grayPixel.disposeSafely()
         titleFont.disposeSafely()
         splashFont.disposeSafely()
@@ -103,7 +95,7 @@ class MainMenuScreen : KtxScreen {
             wrap = true
         }
         val start = menuButton("Start", buttonStyle) {
-            // TODO: Start gameplay once the gameplay screen exists.
+            game.setScreen<GameScreen>()
         }
         val leaderboard = menuButton("Leaderboard", buttonStyle) {
             // TODO: Open leaderboard once the leaderboard screen exists.
@@ -130,38 +122,6 @@ class MainMenuScreen : KtxScreen {
                 }
             })
         }
-
-    private fun clearDesktopBackground() {
-        Gdx.gl.glViewport(0, 0, Gdx.graphics.width, Gdx.graphics.height)
-        Gdx.gl.glClearColor(1f, 1f, 1f, 1f)
-        Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT)
-    }
-
-    private fun drawPhoneShadow() {
-        val screenWidth = Gdx.graphics.width.toFloat()
-        val screenHeight = Gdx.graphics.height.toFloat()
-        if (screenWidth <= 0f || screenHeight <= 0f) return
-
-        val scale = min(screenWidth / VIRTUAL_WIDTH, screenHeight / VIRTUAL_HEIGHT)
-        val phoneWidth = VIRTUAL_WIDTH * scale
-        val phoneHeight = VIRTUAL_HEIGHT * scale
-        val phoneX = (screenWidth - phoneWidth) * 0.5f
-        val phoneY = (screenHeight - phoneHeight) * 0.5f
-
-        screenProjection.setToOrtho2D(0f, 0f, screenWidth, screenHeight)
-        screenBatch.projectionMatrix = screenProjection
-        screenBatch.begin()
-        drawShadowLayer(phoneX + 4f, phoneY - 4f, phoneWidth, phoneHeight, 0.06f)
-        drawShadowLayer(phoneX + 8f, phoneY - 8f, phoneWidth, phoneHeight, 0.035f)
-        drawShadowLayer(phoneX + 12f, phoneY - 12f, phoneWidth, phoneHeight, 0.018f)
-        screenBatch.end()
-    }
-
-    private fun drawShadowLayer(x: Float, y: Float, width: Float, height: Float, alpha: Float) {
-        screenBatch.color = Color(0f, 0f, 0f, alpha)
-        screenBatch.draw(whitePixel, x, y, width, height)
-        screenBatch.color = Color.WHITE
-    }
 
     private fun createPixelTexture(color: Color): Texture {
         val pixmap = Pixmap(1, 1, Pixmap.Format.RGBA8888)
@@ -221,7 +181,7 @@ class MainMenuScreen : KtxScreen {
         private const val BUTTON_FONT_FILE = "fonts/carlito-button.fnt"
         private const val FONT_ATLAS_SCALE = 0.5f
 
-        private val BACKGROUND_GRAY = Color(0xEAEAEAFF.toInt())
+        private val BACKGROUND_GRAY = Color.WHITE
         private val DEFAULT_SPLASH_TEXTS = listOf(
             "splash text."
         )

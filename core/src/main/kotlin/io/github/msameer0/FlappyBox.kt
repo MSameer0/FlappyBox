@@ -8,7 +8,8 @@ class FlappyBox : KtxGame<KtxScreen>() {
     override fun create() {
         KtxAsync.initiate()
 
-        addScreen(MainMenuScreen())
+        addScreen(MainMenuScreen(this))
+        addScreen(GameScreen(this))
         setScreen<MainMenuScreen>()
     }
 }
