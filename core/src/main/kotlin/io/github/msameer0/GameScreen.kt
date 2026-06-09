@@ -4,6 +4,7 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.InputAdapter
 import com.badlogic.gdx.Preferences
+import com.badlogic.gdx.audio.Sound
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.Texture
@@ -30,6 +31,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private val hudFont = createFont(HUD_FONT_FILE, HUD_FONT_SCALE)
     private val centerFont = createFont(HUD_FONT_FILE, CENTER_FONT_SCALE)
     private val warningFont = createFont(WARNING_FONT_FILE, WARNING_FONT_SCALE)
+    private val jumpSound = createSound(JUMP_SOUND_FILE)
+    private val scoreSound = createSound(SCORE_SOUND_FILE)
+    private val deathSound = createSound(DEATH_SOUND_FILE)
+    private val warningSound = createSound(WARNING_SOUND_FILE)
     private val layout = GlyphLayout()
     private val touchPoint = Vector2()
     private val retryButton = Rectangle(BUTTON_X, BUTTON_RETRY_Y, BUTTON_WIDTH, BUTTON_HEIGHT)
@@ -149,6 +154,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         hudFont.disposeSafely()
         centerFont.disposeSafely()
         warningFont.disposeSafely()
+        jumpSound?.dispose()
+        scoreSound?.dispose()
+        deathSound?.dispose()
+        warningSound?.dispose()
     }
 
     private fun resetGame() {
@@ -180,6 +189,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             resetGame()
         }
         birdVelocity = -modifierState().gravityDirection * FLAP_SPEED
+        playSound(jumpSound, JUMP_SOUND_VOLUME)
     }
 
     private fun updateGame(delta: Float) {
@@ -202,12 +212,18 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun updateModifierDirector(delta: Float) {
+        val hadPendingModifier = modifierDirector.pendingModifier != null
+
         modifierDirector.update(
             delta = delta,
             score = score,
             activeModifierTypes = activeModifierTypes(),
             activateModifier = ::activateModifier
         )
+
+        if (!hadPendingModifier && modifierDirector.pendingModifier != null) {
+            playSound(warningSound, WARNING_SOUND_VOLUME)
+        }
     }
 
     private fun updateBird(delta: Float, modifiers: ModifierState) {
@@ -222,6 +238,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             if (!pipe.scored && pipe.x + PIPE_WIDTH < birdLeftX(modifiers)) {
                 pipe.scored = true
                 score += 1
+                playSound(scoreSound, SCORE_SOUND_VOLUME)
                 saveHighScoreIfNeeded()
             }
         }
@@ -278,7 +295,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         birdBottomY(modifiers) < 0f || birdTopY(modifiers) > VIRTUAL_HEIGHT
 
     private fun endGame() {
+        if (gameOver) return
+
         gameOver = true
+        playSound(deathSound, DEATH_SOUND_VOLUME)
         saveHighScoreIfNeeded()
     }
 
@@ -612,6 +632,15 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         return font
     }
 
+    private fun createSound(soundFilePath: String): Sound? {
+        val soundFile = Gdx.files.internal(soundFilePath)
+        return if (soundFile.exists()) Gdx.audio.newSound(soundFile) else null
+    }
+
+    private fun playSound(sound: Sound?, volume: Float) {
+        sound?.play(volume)
+    }
+
     private data class HudLine(
         val text: String,
         val x: Float,
@@ -675,6 +704,14 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val HIGH_SCORE_KEY = "high-score"
         private const val HUD_FONT_FILE = "fonts/carlito-splash.fnt"
         private const val WARNING_FONT_FILE = "fonts/arial-warning.fnt"
+        private const val JUMP_SOUND_FILE = "sounds/jump.wav"
+        private const val SCORE_SOUND_FILE = "sounds/score.wav"
+        private const val DEATH_SOUND_FILE = "sounds/death.wav"
+        private const val WARNING_SOUND_FILE = "sounds/warning.wav"
+        private const val JUMP_SOUND_VOLUME = 0.35f
+        private const val SCORE_SOUND_VOLUME = 0.38f
+        private const val DEATH_SOUND_VOLUME = 0.42f
+        private const val WARNING_SOUND_VOLUME = 0.34f
         private const val THEME_SCORE_INTERVAL = 50
         private const val THEME_TRANSITION_SECONDS = 1.35f
         private const val MIRROR_TRANSITION_SECONDS = 0.7f
