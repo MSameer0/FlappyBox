@@ -82,6 +82,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     fun activateModifier(type: ModifierType, duration: Float) {
         if (duration <= 0f) return
 
+        removeConflictingModifiers(type)
+
         val existingIndex = activeModifiers.indexOfFirst { it.type == type }
         val timeRemaining = if (existingIndex >= 0) {
             max(activeModifiers.removeAt(existingIndex).timeRemaining, duration)
@@ -90,6 +92,15 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         }
 
         activeModifiers += ActiveModifier(type, timeRemaining)
+    }
+
+    private fun removeConflictingModifiers(type: ModifierType) {
+        when (type) {
+            ModifierType.SLOW_SPEED,
+            ModifierType.NORMAL_SPEED,
+            ModifierType.FAST_SPEED -> activeModifiers.removeAll { it.type in SPEED_MODIFIERS }
+            else -> Unit
+        }
     }
 
     override fun show() {
@@ -220,8 +231,8 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun collidesWithBird(pipe: Pipe, modifiers: ModifierState): Boolean {
-        val birdX = birdX(modifiers)
-        val pipeX = pipeX(pipe, modifiers)
+        val birdX = BIRD_BASE_X
+        val pipeX = pipe.x
         val birdRight = birdX + modifiers.birdSize
         val birdTop = birdY + modifiers.birdSize
         val pipeRight = pipeX + PIPE_WIDTH
@@ -259,11 +270,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         shapes.color = palette.foreground
 
         pipes.forEach { pipe ->
-            val pipeX = pipeX(pipe, modifiers)
+            val pipeX = renderPipeX(pipe, modifiers)
             shapes.rect(pipeX, 0f, PIPE_WIDTH, pipe.gapY)
             shapes.rect(pipeX, pipe.gapY + PIPE_GAP, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - PIPE_GAP)
         }
-        shapes.rect(birdX(modifiers), birdY, modifiers.birdSize, modifiers.birdSize)
+        shapes.rect(renderBirdX(modifiers), birdY, modifiers.birdSize, modifiers.birdSize)
 
         shapes.end()
     }
@@ -357,11 +368,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         val modifiers = modifierState()
         val rectangles = mutableListOf<Rectangle>()
         pipes.forEach { pipe ->
-            val pipeX = pipeX(pipe, modifiers)
+            val pipeX = renderPipeX(pipe, modifiers)
             rectangles += Rectangle(pipeX, 0f, PIPE_WIDTH, pipe.gapY)
             rectangles += Rectangle(pipeX, pipe.gapY + PIPE_GAP, PIPE_WIDTH, VIRTUAL_HEIGHT - pipe.gapY - PIPE_GAP)
         }
-        rectangles += Rectangle(birdX(modifiers), birdY, modifiers.birdSize, modifiers.birdSize)
+        rectangles += Rectangle(renderBirdX(modifiers), birdY, modifiers.birdSize, modifiers.birdSize)
         return rectangles
     }
 
@@ -382,9 +393,9 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private fun birdSize(): Float =
         when (latestModifier(ModifierType.SMALL_SIZE, ModifierType.NORMAL_SIZE, ModifierType.BIG_SIZE)) {
-            ModifierType.SMALL_SIZE -> SMALL_BIRD_SIZE
-            ModifierType.BIG_SIZE -> BIG_BIRD_SIZE
-            else -> NORMAL_BIRD_SIZE
+            ModifierType.SMALL_SIZE -> NORMAL_BIRD_SIZE * SMALL_SIZE_MULTIPLIER
+            ModifierType.BIG_SIZE -> NORMAL_BIRD_SIZE * BIG_SIZE_MULTIPLIER
+            else -> NORMAL_BIRD_SIZE * NORMAL_SIZE_MULTIPLIER
         }
 
     private fun latestModifier(vararg types: ModifierType): ModifierType? =
@@ -393,10 +404,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private fun hasModifier(type: ModifierType): Boolean =
         activeModifiers.any { it.type == type }
 
-    private fun birdX(modifiers: ModifierState): Float =
+    private fun renderBirdX(modifiers: ModifierState): Float =
         if (modifiers.mirrored) VIRTUAL_WIDTH - BIRD_BASE_X - modifiers.birdSize else BIRD_BASE_X
 
-    private fun pipeX(pipe: Pipe, modifiers: ModifierState): Float =
+    private fun renderPipeX(pipe: Pipe, modifiers: ModifierState): Float =
         if (modifiers.mirrored) VIRTUAL_WIDTH - pipe.x - PIPE_WIDTH else pipe.x
 
     private fun gameplayPalette(): GameplayPalette {
@@ -466,13 +477,14 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val VIRTUAL_HEIGHT = MainMenuScreen.VIRTUAL_HEIGHT
         private const val BIRD_BASE_X = 82f
         private const val NORMAL_BIRD_SIZE = 24f
-        private const val SMALL_BIRD_SIZE = 18f
-        private const val BIG_BIRD_SIZE = 34f
+        private const val SMALL_SIZE_MULTIPLIER = 0.75f
+        private const val NORMAL_SIZE_MULTIPLIER = 1f
+        private const val BIG_SIZE_MULTIPLIER = 1.4f
         private const val GRAVITY_ACCELERATION = 920f
         private const val FLAP_SPEED = 330f
         private const val NORMAL_SPEED_MULTIPLIER = 1f
-        private const val SLOW_SPEED_MULTIPLIER = 0.65f
-        private const val FAST_SPEED_MULTIPLIER = 1.45f
+        private const val SLOW_SPEED_MULTIPLIER = 0.7f
+        private const val FAST_SPEED_MULTIPLIER = 1.35f
         private const val PIPE_WIDTH = NORMAL_BIRD_SIZE
         private const val PIPE_GAP = 140f
         private const val PIPE_SPEED = 138f
@@ -501,5 +513,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val BUTTON_RETRY_Y = PLATE_Y + 82f
         private const val BUTTON_MENU_Y = PLATE_Y + 30f
         private const val BORDER_SIZE = 2f
+
+        private val SPEED_MODIFIERS = setOf(
+            ModifierType.SLOW_SPEED,
+            ModifierType.NORMAL_SPEED,
+            ModifierType.FAST_SPEED
+        )
     }
 }
