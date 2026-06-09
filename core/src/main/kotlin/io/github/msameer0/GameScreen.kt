@@ -76,6 +76,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private var highScore = preferences.getInteger(HIGH_SCORE_KEY, 0)
     private var gameOver = false
     private var themeBlend = 0f
+    private var mirrorBlend = 0f
 
     init {
         resetGame()
@@ -119,6 +120,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             updateModifierDirector(clampedDelta)
             updateGame(clampedDelta)
             updateTheme(clampedDelta)
+            updateMirrorTransition(clampedDelta)
         }
 
         frameRenderer.draw()
@@ -154,6 +156,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         birdVelocity = 0f
         score = 0
         themeBlend = 0f
+        mirrorBlend = 0f
         gameOver = false
         activeModifiers.clear()
         modifierDirector.reset(score)
@@ -232,6 +235,17 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
             min(targetBlend, themeBlend + step)
         } else {
             max(targetBlend, themeBlend - step)
+        }
+    }
+
+    private fun updateMirrorTransition(delta: Float) {
+        val targetBlend = if (hasModifier(ModifierType.MIRROR_MODE)) 1f else 0f
+        val step = delta / MIRROR_TRANSITION_SECONDS
+
+        mirrorBlend = if (mirrorBlend < targetBlend) {
+            min(targetBlend, mirrorBlend + step)
+        } else {
+            max(targetBlend, mirrorBlend - step)
         }
     }
 
@@ -487,7 +501,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         ModifierState(
             gravityDirection = if (hasModifier(ModifierType.FLIPPED_GRAVITY)) 1f else -1f,
             speedMultiplier = speedMultiplier(),
-            mirrored = hasModifier(ModifierType.MIRROR_MODE),
+            mirrorBlend = mirrorBlend,
             birdSize = birdSize()
         )
 
@@ -525,11 +539,17 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private fun renderBirdX(modifiers: ModifierState): Float {
         val birdX = birdLeftX(modifiers)
-        return if (modifiers.mirrored) VIRTUAL_WIDTH - birdX - modifiers.birdSize else birdX
+        return renderMirroredX(birdX, modifiers.birdSize, modifiers)
     }
 
     private fun renderPipeX(pipe: Pipe, modifiers: ModifierState): Float =
-        if (modifiers.mirrored) VIRTUAL_WIDTH - pipe.x - PIPE_WIDTH else pipe.x
+        renderMirroredX(pipe.x, PIPE_WIDTH, modifiers)
+
+    private fun renderMirroredX(x: Float, width: Float, modifiers: ModifierState): Float {
+        val mirroredX = VIRTUAL_WIDTH - x - width
+        val progress = easeInOutExpo(modifiers.mirrorBlend)
+        return x + (mirroredX - x) * progress
+    }
 
     private fun gameplayPalette(): GameplayPalette {
         val easedBlend = smoothStep(themeBlend)
@@ -547,6 +567,14 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
     private fun smoothStep(value: Float): Float =
         value * value * (3f - 2f * value)
+
+    private fun easeInOutExpo(value: Float): Float =
+        when {
+            value <= 0f -> 0f
+            value >= 1f -> 1f
+            value < 0.5f -> Math.pow(2.0, (20f * value - 10f).toDouble()).toFloat() * 0.5f
+            else -> (2f - Math.pow(2.0, (-20f * value + 10f).toDouble()).toFloat()) * 0.5f
+        }
 
     private fun Color.withAlpha(alpha: Float): Color =
         Color(r, g, b, alpha)
@@ -599,7 +627,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private data class ModifierState(
         val gravityDirection: Float,
         val speedMultiplier: Float,
-        val mirrored: Boolean,
+        val mirrorBlend: Float,
         val birdSize: Float
     )
 
@@ -649,6 +677,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val WARNING_FONT_FILE = "fonts/arial-warning.fnt"
         private const val THEME_SCORE_INTERVAL = 50
         private const val THEME_TRANSITION_SECONDS = 1.35f
+        private const val MIRROR_TRANSITION_SECONDS = 0.7f
         private const val WARNING_FADE_SECONDS = 0.65f
         private const val WARNING_TEXT_Y = VIRTUAL_HEIGHT * 0.62f
         private const val WARNING_FONT_SCALE = 0.44f
