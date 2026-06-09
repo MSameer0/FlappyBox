@@ -159,10 +159,15 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         modifierDirector.reset(score)
         pipes.clear()
 
+        var gapY = STARTING_GAP_Y
         repeat(PIPE_COUNT) { index ->
+            if (index > 0) {
+                gapY = nextPipeGapY(gapY)
+            }
+
             pipes += Pipe(
                 x = VIRTUAL_WIDTH + PIPE_START_OFFSET + PIPE_SPACING * index,
-                gapY = randomGapY()
+                gapY = gapY
             )
         }
     }
@@ -234,11 +239,11 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         val firstPipe = pipes.firstOrNull() ?: return
         if (firstPipe.x + PIPE_WIDTH >= 0f) return
 
-        val farthestX = pipes.maxOf { it.x }
+        val farthestPipe = pipes.maxBy { it.x }
         pipes.removeAt(0)
         pipes += Pipe(
-            x = farthestX + PIPE_SPACING,
-            gapY = randomGapY()
+            x = farthestPipe.x + PIPE_SPACING,
+            gapY = nextPipeGapY(farthestPipe.gapY)
         )
     }
 
@@ -552,8 +557,21 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         textFont.draw(batch, text, (VIRTUAL_WIDTH - layout.width) * 0.5f, y)
     }
 
-    private fun randomGapY(): Float =
-        MathUtils.random(MIN_GAP_Y, VIRTUAL_HEIGHT - MIN_GAP_Y - PIPE_GAP)
+    private fun nextPipeGapY(previousGapY: Float): Float {
+        val maxStep = pipeGapMaxStep()
+        val minGapY = max(MIN_GAP_Y, previousGapY - maxStep)
+        val maxGapY = min(MAX_GAP_Y, previousGapY + maxStep)
+        return MathUtils.random(minGapY, maxGapY)
+    }
+
+    private fun pipeGapMaxStep(): Float =
+        when {
+            score < 10 -> PIPE_GAP_STEP_SCORE_0
+            score < 20 -> PIPE_GAP_STEP_SCORE_10
+            score < 35 -> PIPE_GAP_STEP_SCORE_20
+            score < 50 -> PIPE_GAP_STEP_SCORE_35
+            else -> PIPE_GAP_STEP_SCORE_50
+        }
 
     private fun createFont(fontFilePath: String, scale: Float): BitmapFont {
         val fontFile = Gdx.files.internal(fontFilePath)
@@ -612,6 +630,13 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         private const val PIPE_START_OFFSET = 112f
         private const val PIPE_COUNT = 5
         private const val MIN_GAP_Y = 70f
+        private const val MAX_GAP_Y = VIRTUAL_HEIGHT - MIN_GAP_Y - PIPE_GAP
+        private const val STARTING_GAP_Y = (VIRTUAL_HEIGHT - PIPE_GAP) * 0.5f
+        private const val PIPE_GAP_STEP_SCORE_0 = 34f
+        private const val PIPE_GAP_STEP_SCORE_10 = 46f
+        private const val PIPE_GAP_STEP_SCORE_20 = 62f
+        private const val PIPE_GAP_STEP_SCORE_35 = 80f
+        private const val PIPE_GAP_STEP_SCORE_50 = 105f
         private const val HUD_PADDING = 12f
         private const val HUD_TOP_PADDING = 16f
         private const val HUD_LINE_SPACING = 26f
