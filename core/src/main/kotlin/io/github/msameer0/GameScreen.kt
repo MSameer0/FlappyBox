@@ -48,6 +48,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private val modifierDirector = ModifierDirector()
     private val input = object : InputAdapter() {
         override fun keyDown(keycode: Int): Boolean {
+            if (scoreSubmissionInputLocked) {
+                return true
+            }
+
             if (gameOver && keycode == Input.Keys.ESCAPE) {
                 game.setScreen<MainMenuScreen>()
                 return true
@@ -61,6 +65,10 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         }
 
         override fun touchDown(screenX: Int, screenY: Int, pointer: Int, button: Int): Boolean {
+            if (scoreSubmissionInputLocked) {
+                return true
+            }
+
             if (gameOver) {
                 touchPoint.set(screenX.toFloat(), screenY.toFloat())
                 viewport.unproject(touchPoint)
@@ -90,6 +98,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     private var leaderboardStatus = ""
     private var submittingScore = false
     private var scoreSubmitted = false
+    private var scoreSubmissionInputLocked = false
     private var gravityReturnRelaxedPipesPrepared = false
 
     init {
@@ -180,6 +189,7 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         leaderboardStatus = ""
         submittingScore = false
         scoreSubmitted = false
+        scoreSubmissionInputLocked = false
         gravityReturnRelaxedPipesPrepared = false
         activeModifiers.clear()
         modifierDirector.reset(score)
@@ -347,15 +357,18 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
     }
 
     private fun promptScoreSubmission() {
-        if (submittingScore || scoreSubmitted || score <= 0) return
+        if (scoreSubmissionInputLocked || submittingScore || scoreSubmitted || score <= 0) return
 
+        scoreSubmissionInputLocked = true
         Gdx.input.getTextInput(
             object : Input.TextInputListener {
                 override fun input(text: String) {
                     submitScore(text)
                 }
 
-                override fun canceled() = Unit
+                override fun canceled() {
+                    scoreSubmissionInputLocked = false
+                }
             },
             "Submit Score",
             "",
@@ -367,21 +380,24 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
         val trimmedName = username.trim()
         if (trimmedName.isEmpty()) {
             leaderboardStatus = "Enter a name to submit"
+            scoreSubmissionInputLocked = false
             return
         }
 
+        val submittedScore = score
         submittingScore = true
         leaderboardStatus = "Submitting score..."
 
         val request = Net.HttpRequest(Net.HttpMethods.POST).apply {
             url = LEADERBOARD_API_PATH
             setHeader("Content-Type", "application/json")
-            content = """{"name":${trimmedName.toJsonString()},"score":$score}"""
+            content = """{"name":${trimmedName.toJsonString()},"score":$submittedScore}"""
         }
 
         Gdx.net.sendHttpRequest(request, object : Net.HttpResponseListener {
             override fun handleHttpResponse(response: Net.HttpResponse) {
                 submittingScore = false
+                scoreSubmissionInputLocked = false
 
                 if (response.status.statusCode !in 200..299) {
                     leaderboardStatus = "Leaderboard unavailable"
@@ -395,11 +411,13 @@ class GameScreen(private val game: FlappyBox) : KtxScreen {
 
             override fun failed(t: Throwable) {
                 submittingScore = false
+                scoreSubmissionInputLocked = false
                 leaderboardStatus = "Leaderboard unavailable"
             }
 
             override fun cancelled() {
                 submittingScore = false
+                scoreSubmissionInputLocked = false
             }
         })
     }
