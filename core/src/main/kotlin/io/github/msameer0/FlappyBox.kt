@@ -10,6 +10,7 @@ class FlappyBox : KtxGame<KtxScreen>() {
 
         addScreen(MainMenuScreen(this))
         addScreen(GameScreen(this))
+        addScreen(LeaderboardScreen(this))
         setScreen<MainMenuScreen>()
     }
 }

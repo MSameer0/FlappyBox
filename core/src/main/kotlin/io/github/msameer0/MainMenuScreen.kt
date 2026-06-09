@@ -98,7 +98,7 @@ class MainMenuScreen(private val game: FlappyBox) : KtxScreen {
             game.setScreen<GameScreen>()
         }
         val leaderboard = menuButton("Leaderboard", buttonStyle) {
-            // TODO: Open leaderboard once the leaderboard screen exists.
+            game.setScreen<LeaderboardScreen>()
         }
 
         return Table().apply {

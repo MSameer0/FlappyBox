@@ -1,5 +1,5 @@
 const DEFAULT_LIMIT = 10;
-const MAX_LIMIT = 25;
+const MAX_LIMIT = 100;
 const MAX_SCORE = 999999;
 const MAX_STORED_ENTRIES = 100;
 const LEADERBOARD_KEY = process.env.LEADERBOARD_KEY || "flappybox:leaderboard";
